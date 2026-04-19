@@ -1,14 +1,51 @@
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8741656871:AAEFrxiiRqvDYBxT7sS7FofW0YSP6VYGJXQ")
-BOT_NAME = "MOBO TUNNEL"
-BOT_USERNAME = os.getenv("BOT_USERNAME", "mobotunnel_bot")
+BOT_TOKEN     = os.getenv("BOT_TOKEN", "8741656871:AAEFrxiiRqvDYBxT7sS7FofW0YSP6VYGJXQ")
+BOT_NAME      = "MOBO TUNNEL"
+BOT_USERNAME  = os.getenv("BOT_USERNAME", "mobotunnel_bot")
 MAIN_ADMIN_ID = 6154678499
-DATABASE_URL = os.getenv("DATABASE_URL", "mobo_tunnel.db")
+DATABASE_URL  = os.getenv("DATABASE_URL", "mobo_tunnel.db")
 
-DEFAULT_WELCOME = "👋 أهلاً {name}!\n\nمرحباً بك في {bot}\n\nتابع قناتنا للحصول على أحدث الملفات!"
+WELCOME_TEXT = (
+    "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+    "   🌐⚡ MOBO TUNNEL ⚡🌐\n"
+    "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+    "👋 أهلاً {name}!\n\n"
+    "🎯 هنا تجد أحدث كونفيجات\n"
+    "    الإنترنت المجاني ويوتيوب\n\n"
+    "📌 طريقة الاستلام:\n"
+    "  1️⃣ فعّل البوت بالضغط على ⚡\n"
+    "  2️⃣ ادعمنا بالضغط على ❤️\n"
+    "  3️⃣ اضغط 📥 لاستلام الملفات\n\n"
+    "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
+)
+
+FORCE_SUB_TEXT = (
+    "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+    "      🔒 وصول مقيّد\n"
+    "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+    "⚠️ للحصول على الملفات يجب:\n\n"
+    "  ✅ الاشتراك في {target_name}\n\n"
+    "📌 خطوات التفعيل:\n"
+    "  1️⃣ اضغط زر الاشتراك أدناه\n"
+    "  2️⃣ اشترك ثم عد هنا\n"
+    "  3️⃣ اضغط ✅ تحققت من الاشتراك\n\n"
+    "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
+)
+
+NOT_REACTED_TEXT = (
+    "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+    "   ❌ لم يتم التفاعل بعد\n"
+    "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+    "📌 طريقة الاستلام:\n"
+    "  1️⃣ فعّل البوت بالضغط على ⚡\n"
+    "  2️⃣ ادعمنا بالضغط على ❤️\n"
+    "  3️⃣ اضغط 📥 لاستلام الملفات\n\n"
+    "⚡ سارع قبل انتهاء الصلاحية!\n\n"
+    "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
+)
 
 DEFAULT_FILE_TYPES = [
-    {"id": "internet", "name": " مجاني", "emoji": "🌐"},
-    {"id": "youtube",  "name": "يوتيوب",       "emoji": "🎬"},
+    {"id": "internet", "name": "إنترنت مجاني", "emoji": "🌐"},
+    {"id": "youtube",  "name": "يوتيوب",        "emoji": "🎬"},
 ]
