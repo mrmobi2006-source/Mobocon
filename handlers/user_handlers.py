@@ -152,8 +152,8 @@ async def handle_getfile_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "اضغط الزر أدناه لاستلام ملفاتك:"
             ),
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("📥 استلام الملفات ↗️", url=deep_link)
-            ]])
+                InlineKeyboardButton("📥 استلام الملفات ↗️", url=f"https://t.me/{bot_username}?start=getfile_{file_db_id}")
+        ]])
         )
     except (Forbidden, BadRequest):
         await query.answer(
