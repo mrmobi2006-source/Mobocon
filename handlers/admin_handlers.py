@@ -36,10 +36,25 @@ async def _show_main(target, user_id: int):
         f"🔒 إجباري:     {stats['force_subs']}\n"
     )
     markup = kb.admin_main_menu(is_main, enabled)
+
+    # handle_message (query object) or direct message
     if hasattr(target, "edit_message_text"):
-        await target.edit_message_text(text, reply_markup=markup)
-    else:
+        try:
+            await target.edit_message_text(text, reply_markup=markup)
+            return
+        except Exception:
+            # edit failed (e.g. message from channel or too old) — send new message
+            try:
+                await target.message.reply_text(text, reply_markup=markup)
+                return
+            except Exception:
+                pass
+        return
+    # Direct message object
+    try:
         await target.reply_text(text, reply_markup=markup)
+    except Exception:
+        pass
 
 
 # ════════════════════════════════════════════════════════
@@ -734,6 +749,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Set welcome ────────────────────────────────────
     if step == "set_welcome":
+        if not msg.text:
+            await msg.reply_text("❌ أرسل نصاً.")
+            return
         await db.set_setting("welcome_message", msg.text.strip())
         context.user_data.clear()
         await msg.reply_text("✅ تم تحديث رسالة الترحيب!")
@@ -743,9 +761,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if msg.photo:
             await db.set_setting("bot_logo", msg.photo[-1].file_id)
             context.user_data.clear()
-            await msg.reply_text("✅ تم تعيين الشعار الافتراضي!")
+            await msg.reply_text(
+                "✅ تم تعيين الشعار الافتراضي!",
+                reply_markup=kb.back_btn("adm_settings")
+            )
         else:
-            await msg.reply_text("❌ أرسل صورة.")
+            await msg.reply_text("❌ أرسل صورة فقط.")
 
     # ── Edit file type desc ────────────────────────────
     elif step == "editft_desc":
