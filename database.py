@@ -48,6 +48,7 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS files (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id        INTEGER DEFAULT 0,
+            app_id          INTEGER DEFAULT 0,
             file_id         TEXT NOT NULL,
             file_type       TEXT DEFAULT 'general',
             file_name       TEXT DEFAULT '',
@@ -103,12 +104,44 @@ async def init_db():
             is_active   INTEGER DEFAULT 1,
             added_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS apps (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            emoji      TEXT DEFAULT '📱',
+            is_active  INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            added_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS banned_users (
+            user_id   INTEGER PRIMARY KEY,
+            username  TEXT DEFAULT '',
+            full_name TEXT DEFAULT '',
+            reason    TEXT DEFAULT '',
+            banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS vip_users (
+            user_id    INTEGER PRIMARY KEY,
+            username   TEXT DEFAULT '',
+            full_name  TEXT DEFAULT '',
+            expires_at TEXT DEFAULT '',
+            added_by   INTEGER DEFAULT 0,
+            added_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
         """)
 
         await db.execute(
             "INSERT OR IGNORE INTO admins (user_id,full_name,is_main) VALUES (?,?,1)",
             (MAIN_ADMIN_ID, "Main Admin")
         )
+
+        # Migration: add app_id column if missing
+        try:
+            await db.execute("ALTER TABLE files ADD COLUMN app_id INTEGER DEFAULT 0")
+        except Exception:
+            pass
         for ft in DEFAULT_FILE_TYPES:
             await db.execute(
                 "INSERT OR IGNORE INTO file_types (id,name,emoji) VALUES (?,?,?)",
@@ -118,6 +151,10 @@ async def init_db():
             "welcome_message": WELCOME_TEXT,
             "bot_logo":        "",
             "bot_enabled":     "1",
+            "vip_enabled":     "0",
+            "vip_contact":     "@xtt1x",
+            "button_color":    "default",
+            "vip_message":     "💎 للحصول على VIP تواصل مع @xtt1x",
         }
         for k, v in defaults.items():
             await db.execute("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)", (k, v))
@@ -261,13 +298,14 @@ async def update_group_message(gid: int, message_id: int):
 # ── Files in a group ──────────────────────────────────────────────
 async def add_file_to_group(group_id: int, file_id: str, file_type: str,
                              file_name: str, file_caption: str, sort_order: int,
-                             channel_id: str = "", message_id: int = 0) -> int:
+                             channel_id: str = "", message_id: int = 0,
+                             app_id: int = 0) -> int:
     async with aiosqlite.connect(DB) as db:
         cur = await db.execute(
             """INSERT INTO files
-               (group_id,file_id,file_type,file_name,file_caption,sort_order,channel_id,message_id)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (group_id, file_id, file_type, file_name, file_caption, sort_order, channel_id, message_id))
+               (group_id,app_id,file_id,file_type,file_name,file_caption,sort_order,channel_id,message_id)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (group_id, app_id, file_id, file_type, file_name, file_caption, sort_order, channel_id, message_id))
         await db.commit()
         return cur.lastrowid
 
@@ -420,5 +458,158 @@ async def get_stats() -> dict:
         ch = (await (await db.execute("SELECT COUNT(*) FROM channels WHERE is_active=1")).fetchone())[0]
         ad = (await (await db.execute("SELECT COUNT(*) FROM admins")).fetchone())[0]
         fs = (await (await db.execute("SELECT COUNT(*) FROM force_sub WHERE is_active=1")).fetchone())[0]
+        ap = (await (await db.execute("SELECT COUNT(*) FROM apps WHERE is_active=1")).fetchone())[0]
+        bn = (await (await db.execute("SELECT COUNT(*) FROM banned_users")).fetchone())[0]
+        vp = (await (await db.execute("SELECT COUNT(*) FROM vip_users")).fetchone())[0]
         return {"users": u, "files": f, "groups": g, "reactions": rc,
-                "deliveries": dc, "channels": ch, "admins": ad, "force_subs": fs}
+                "deliveries": dc, "channels": ch, "admins": ad, "force_subs": fs,
+                "apps": ap, "banned": bn, "vip": vp}
+
+
+# ── Apps ──────────────────────────────────────────────────────────
+async def get_all_apps():
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            "SELECT id,name,emoji FROM apps WHERE is_active=1 ORDER BY sort_order,id")
+        rows = await cur.fetchall()
+        return [{"id": r[0], "name": r[1], "emoji": r[2]} for r in rows]
+
+async def add_app(name: str, emoji: str) -> int:
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            "INSERT INTO apps (name,emoji) VALUES (?,?)", (name, emoji))
+        await db.commit()
+        return cur.lastrowid
+
+async def remove_app(app_id: int):
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("UPDATE apps SET is_active=0 WHERE id=?", (app_id,))
+        await db.commit()
+
+async def get_app(app_id: int):
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            "SELECT id,name,emoji FROM apps WHERE id=?", (app_id,))
+        r = await cur.fetchone()
+        return {"id": r[0], "name": r[1], "emoji": r[2]} if r else None
+
+async def get_apps_in_group(group_id: int):
+    """Return distinct app names/emojis used in a publish group"""
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            """SELECT DISTINCT f.app_id, a.name, a.emoji
+               FROM files f JOIN apps a ON f.app_id=a.id
+               WHERE f.group_id=? AND f.is_active=1""",
+            (group_id,))
+        rows = await cur.fetchall()
+        return [{"id": r[0], "name": r[1], "emoji": r[2]} for r in rows]
+
+async def get_files_by_app_and_type(group_id: int, app_id: int, file_type: str):
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            """SELECT id,file_id,file_type,file_name,file_caption,sort_order
+               FROM files WHERE group_id=? AND app_id=? AND file_type=? AND is_active=1
+               ORDER BY sort_order""",
+            (group_id, app_id, file_type))
+        rows = await cur.fetchall()
+        return [{"id": r[0], "file_id": r[1], "file_type": r[2],
+                 "file_name": r[3], "file_caption": r[4], "sort_order": r[5]} for r in rows]
+
+async def get_filetypes_in_app(group_id: int, app_id: int):
+    """Return distinct file types inside an app within a group"""
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            """SELECT DISTINCT f.file_type, ft.name, ft.emoji
+               FROM files f
+               JOIN file_types ft ON f.file_type=ft.id
+               WHERE f.group_id=? AND f.app_id=? AND f.is_active=1""",
+            (group_id, app_id))
+        rows = await cur.fetchall()
+        return [{"id": r[0], "name": r[1], "emoji": r[2]} for r in rows]
+
+async def deactivate_old_groups():
+    """Mark all previous groups as inactive (clear old files) on new publish"""
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("UPDATE publish_groups SET is_active=0")
+        await db.execute("UPDATE files SET is_active=0")
+        await db.commit()
+
+
+# ── Banned users ──────────────────────────────────────────────────
+async def ban_user(user_id: int, username: str, full_name: str, reason: str = ""):
+    async with aiosqlite.connect(DB) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO banned_users (user_id,username,full_name,reason) VALUES (?,?,?,?)",
+            (user_id, username, full_name, reason))
+        await db.commit()
+
+async def unban_user(user_id: int):
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("DELETE FROM banned_users WHERE user_id=?", (user_id,))
+        await db.commit()
+
+async def unban_all():
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("DELETE FROM banned_users")
+        await db.commit()
+
+async def is_banned(user_id: int) -> bool:
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute("SELECT 1 FROM banned_users WHERE user_id=?", (user_id,))
+        return await cur.fetchone() is not None
+
+async def get_all_banned():
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            "SELECT user_id,username,full_name,reason FROM banned_users ORDER BY banned_at DESC")
+        rows = await cur.fetchall()
+        return [{"user_id": r[0], "username": r[1], "full_name": r[2], "reason": r[3]} for r in rows]
+
+
+# ── VIP users ─────────────────────────────────────────────────────
+async def add_vip(user_id: int, username: str, full_name: str, expires_at: str, added_by: int):
+    async with aiosqlite.connect(DB) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO vip_users (user_id,username,full_name,expires_at,added_by) VALUES (?,?,?,?,?)",
+            (user_id, username, full_name, expires_at, added_by))
+        await db.commit()
+
+async def remove_vip(user_id: int):
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("DELETE FROM vip_users WHERE user_id=?", (user_id,))
+        await db.commit()
+
+async def remove_all_vip():
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("DELETE FROM vip_users")
+        await db.commit()
+
+async def is_vip(user_id: int) -> bool:
+    from datetime import datetime
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            "SELECT expires_at FROM vip_users WHERE user_id=?", (user_id,))
+        r = await cur.fetchone()
+        if not r:
+            return False
+        if r[0] == "permanent":
+            return True
+        try:
+            exp = datetime.fromisoformat(r[0])
+            return datetime.now() < exp
+        except Exception:
+            return True
+
+async def get_all_vip():
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            "SELECT user_id,username,full_name,expires_at FROM vip_users ORDER BY added_at DESC")
+        rows = await cur.fetchall()
+        return [{"user_id": r[0], "username": r[1], "full_name": r[2], "expires_at": r[3]} for r in rows]
+
+async def get_all_users_list():
+    async with aiosqlite.connect(DB) as db:
+        cur = await db.execute(
+            "SELECT user_id,username,full_name FROM users ORDER BY joined_at DESC LIMIT 200")
+        rows = await cur.fetchall()
+        return [{"user_id": r[0], "username": r[1], "full_name": r[2]} for r in rows]
