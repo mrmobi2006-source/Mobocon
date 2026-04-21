@@ -7,7 +7,8 @@ from config import BOT_TOKEN
 from database import init_db
 from handlers.user_handlers import (
     start, check_sub_callback, handle_react,
-    handle_getfile_btn, handle_user_filetype
+    handle_getfile_btn, handle_user_filetype,
+    handle_user_app, handle_user_app_filetype
 )
 from handlers.admin_handlers import (
     admin_cmd, admin_callback, handle_message,
@@ -24,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 async def post_init(app: Application):
     await init_db()
-    # Remove all public commands — users see nothing
     await app.bot.set_my_commands([])
     logger.info("✅ MOBO TUNNEL Bot ready")
 
@@ -34,15 +34,17 @@ def main():
 
     # ── User ──────────────────────────────────────────
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(check_sub_callback,  pattern=r"^check_sub$"))
-    app.add_handler(CallbackQueryHandler(handle_react,        pattern=r"^react_\d+$"))
-    app.add_handler(CallbackQueryHandler(handle_getfile_btn,  pattern=r"^getfile_\d+$"))
-    app.add_handler(CallbackQueryHandler(handle_user_filetype, pattern=r"^userget_\d+_.+$"))
+    app.add_handler(CallbackQueryHandler(check_sub_callback,       pattern=r"^check_sub$"))
+    app.add_handler(CallbackQueryHandler(handle_react,             pattern=r"^react_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_getfile_btn,       pattern=r"^getfile_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_user_app,          pattern=r"^uapp_\d+_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_user_app_filetype, pattern=r"^uappft_\d+_\d+_.+$"))
+    app.add_handler(CallbackQueryHandler(handle_user_filetype,     pattern=r"^userget_\d+_.+$"))
 
     # ── Admin callbacks ────────────────────────────────
     app.add_handler(CallbackQueryHandler(
         admin_callback,
-        pattern=r"^(adm_|pub_|del|editft_)"
+        pattern=r"^(adm_|pub_|del|editft_|unban_|rmvip_|pick_|page_|setcolor_)"
     ))
 
     # ── Admin commands ─────────────────────────────────
@@ -53,7 +55,7 @@ def main():
     app.add_handler(CommandHandler("addfiletype", addfiletype_cmd))
     app.add_handler(CommandHandler("broadcast",   broadcast_cmd))
 
-    # ── Admin message flows (files, text, photos…) ────
+    # ── Admin message flows ────────────────────────────
     app.add_handler(MessageHandler(
         (filters.TEXT | filters.Document.ALL | filters.PHOTO |
          filters.VIDEO | filters.AUDIO | filters.VOICE |
