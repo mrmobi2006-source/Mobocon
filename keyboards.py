@@ -5,12 +5,12 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 def channel_post_buttons(group_id: int, rc: int, dc: int, bot_username: str) -> InlineKeyboardMarkup:
     """
     Row 1: ⚡ فعّل البوت أولاً  — URL يفتح البوت
-    Row 2: ❤️ تفاعل (callback)  |  📥 استلام (URL مباشر للبوت)
+    Row 2: 💗 تفاعل (callback)  |  💌 استلام (URL مباشر للبوت)
     زر استلام URL = ينقل المستخدم مباشرة للبوت ويعرض قائمة الملفات
     """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "⚡️ فعّل البوت أولاً 🤖",
+            "⚡️ فعّل البوت أولاً 🌚",
             url=f"https://t.me/{bot_username}?start=activate"
         )],
         [
