@@ -7,9 +7,6 @@ from utils import check_force_sub
 from config import BOT_NAME, FORCE_SUB_TEXT, NOT_REACTED_TEXT
 
 
-# ════════════════════════════════════════════════════════
-#  /start
-# ════════════════════════════════════════════════════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.register_user(user.id, user.username or "", user.full_name or "")
@@ -19,14 +16,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
             "  ⚠️ البوت متوقف مؤقتاً\n"
-            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
-            "🔄 عد لاحقاً!"
-        )
+            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n🔄 عد لاحقاً!")
         return
 
     args = context.args or []
-
-    # Deep link: getfile_{group_id}
     if args and args[0].startswith("getfile_"):
         try:
             group_id = int(args[0].split("_")[1])
@@ -35,39 +28,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # Force sub check (skip for admins)
     if not await db.is_admin(user.id):
-        # Ban check
         if await db.is_banned(user.id):
             await update.message.reply_text(
                 "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
                 "      🚫 محظور\n"
                 "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
-                "⛔ أنت محظور من استخدام هذا البوت."
-            )
+                "⛔ أنت محظور من استخدام هذا البوت.")
             return
-
         not_joined = await check_force_sub(context.bot, user.id)
         if not_joined:
             names = "، ".join([s["target_name"] for s in not_joined])
             text  = FORCE_SUB_TEXT.replace("{target_name}", names)
-            await update.message.reply_text(
-                text,
-                reply_markup=kb.force_sub_user_buttons(not_joined)
-            )
+            await update.message.reply_text(text, reply_markup=kb.force_sub_user_buttons(not_joined))
             return
 
-    # Show welcome
     welcome = await db.get_setting("welcome_message")
     welcome = welcome.replace("{name}", user.first_name or "صديقي").replace("{bot}", BOT_NAME)
     logo    = await db.get_setting("bot_logo")
-
-    markup = None
+    markup  = None
     if await db.is_admin(user.id):
         markup = InlineKeyboardMarkup([[
             InlineKeyboardButton("👑 لوحة التحكم", callback_data="adm_main")
         ]])
-
     try:
         if logo:
             await update.message.reply_photo(photo=logo, caption=welcome, reply_markup=markup)
@@ -77,43 +60,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome, reply_markup=markup)
 
 
-# ════════════════════════════════════════════════════════
-#  Force sub check button
-# ════════════════════════════════════════════════════════
 async def check_sub_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user  = update.effective_user
     await query.answer()
-
     not_joined = await check_force_sub(context.bot, user.id)
     if not_joined:
         names = "، ".join([s["target_name"] for s in not_joined])
         text  = FORCE_SUB_TEXT.replace("{target_name}", names)
-        await query.edit_message_text(
-            text,
-            reply_markup=kb.force_sub_user_buttons(not_joined)
-        )
+        try:
+            await query.edit_message_text(text, reply_markup=kb.force_sub_user_buttons(not_joined))
+        except Exception:
+            await context.bot.send_message(chat_id=user.id, text=text,
+                                           reply_markup=kb.force_sub_user_buttons(not_joined))
         return
-
-    # Passed — show welcome
     welcome = await db.get_setting("welcome_message")
     welcome = welcome.replace("{name}", user.first_name or "صديقي").replace("{bot}", BOT_NAME)
-    await query.edit_message_text(welcome)
+    try:
+        await query.edit_message_text(welcome)
+    except Exception:
+        await context.bot.send_message(chat_id=user.id, text=welcome)
 
 
-# ════════════════════════════════════════════════════════
-#  ❤️ React button (from channel post)
-# ════════════════════════════════════════════════════════
 async def handle_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query    = update.callback_query
     user     = update.effective_user
     group_id = int(query.data.split("_")[1])
-
     await db.register_user(user.id, user.username or "", user.full_name or "")
 
-    enabled = await db.get_setting("bot_enabled", "1")
-    if enabled != "1":
+    if await db.get_setting("bot_enabled", "1") != "1":
         await query.answer("⚠️ البوت متوقف مؤقتاً.", show_alert=True)
+        return
+    if await db.is_banned(user.id):
+        await query.answer("🚫 أنت محظور من استخدام البوت.", show_alert=True)
         return
 
     is_new = await db.add_reaction(user.id, group_id)
@@ -125,31 +104,29 @@ async def handle_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.answer("✅ سبق ودعمت! اضغط 📥 لاستلام الملفات.", show_alert=True)
 
-    bot_username = context.bot.username
     try:
         await query.edit_message_reply_markup(
-            reply_markup=kb.channel_post_buttons(group_id, rc, dc, bot_username)
+            reply_markup=kb.channel_post_buttons(group_id, rc, dc, context.bot.username)
         )
     except Exception:
         pass
 
 
-# ════════════════════════════════════════════════════════
-#  📥 Receive button (from channel post) — direct deep link redirect
-# ════════════════════════════════════════════════════════
 async def handle_getfile_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    زر استلام من القناة:
+    - يتحقق من التفاعل
+    - يرسل رسالة خاصة للمستخدم مع زر URL يفتح البوت مباشرة
+    - هذا هو الحل الوحيد المضمون في تيليجرام (answer_callback_query url= غير مدعوم في كل العملاء)
+    """
     query    = update.callback_query
     user     = update.effective_user
     group_id = int(query.data.split("_")[1])
-
     await db.register_user(user.id, user.username or "", user.full_name or "")
 
-    enabled = await db.get_setting("bot_enabled", "1")
-    if enabled != "1":
+    if await db.get_setting("bot_enabled", "1") != "1":
         await query.answer("⚠️ البوت متوقف مؤقتاً.", show_alert=True)
         return
-
-    # Ban check
     if await db.is_banned(user.id):
         await query.answer("🚫 أنت محظور من استخدام البوت.", show_alert=True)
         return
@@ -159,164 +136,49 @@ async def handle_getfile_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer(NOT_REACTED_TEXT[:200], show_alert=True)
         return
 
-    # ✅ Redirect directly to bot — no message shown here
+    await query.answer()  # أغلق spinner بدون رسالة
+
     bot_username = context.bot.username
-    await query.answer()
-    # The URL button trick: answer with url opens bot directly
-    # We use an inline url button approach via edit
-    markup = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "📥 افتح البوت لاستلام الملفات",
-            url=f"https://t.me/{bot_username}?start=getfile_{group_id}"
-        )
-    ]])
+    deep_link    = f"https://t.me/{bot_username}?start=getfile_{group_id}"
+
     try:
-        await query.message.reply_to_message  # no-op just to avoid unused warning
-    except Exception:
-        pass
-    # Open bot directly
-    await context.bot.answer_callback_query(
-        callback_query_id=query.id,
-        url=f"https://t.me/{bot_username}?start=getfile_{group_id}"
-    )
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=(
+                "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+                f"  🌐⚡ {BOT_NAME} ⚡🌐\n"
+                "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                "✅ تم التحقق من تفاعلك!\n"
+                "اضغط الزر أدناه لاستلام ملفاتك:"
+            ),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📥 استلام الملفات ↗️", url=deep_link)
+            ]])
+        )
+    except (Forbidden, BadRequest):
+        await query.answer(
+            "⚠️ افتح البوت أولاً بالضغط على زر ⚡️ ثم حاول مجدداً.",
+            show_alert=True
+        )
 
 
-# ════════════════════════════════════════════════════════
-#  userget_{group_id}_{file_type}  — user picks file type
-# ════════════════════════════════════════════════════════
-async def handle_user_filetype(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user  = update.effective_user
-    await query.answer()
-
-    parts    = query.data.split("_", 2)  # userget_{group_id}_{file_type_or_back}
-    group_id = int(parts[1])
-    sub      = parts[2]
-
-    if sub == "back":
-        # Go back to app selection
-        await _show_app_or_type_menu(query, context, user.id, group_id, edit=True)
-        return
-
-    file_type = sub
-    reacted   = await db.has_reacted(user.id, group_id)
-    if not reacted:
-        await query.edit_message_text(NOT_REACTED_TEXT)
-        return
-
-    # Check if app-based
-    apps_in_group = await db.get_apps_in_group(group_id)
-    if apps_in_group:
-        # Need app context — shouldn't reach here directly
-        await _show_app_or_type_menu(query, context, user.id, group_id, edit=True)
-        return
-
-    files = await db.get_files_in_group(group_id)
-    files = [f for f in files if f["file_type"] == file_type]
-    if not files:
-        await query.edit_message_text("❌ لا توجد ملفات من هذا النوع.")
-        return
-
-    group = await db.get_group(group_id)
-    await query.delete_message()
-    await _send_files_to_user(context, user.id, group_id, files, group)
-
-
-# ── App selector (user picks app first) ──────────────────────────
-async def handle_user_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query    = update.callback_query
-    user     = update.effective_user
-    await query.answer()
-
-    _, group_id_str, app_id_str = query.data.split("_", 2)
-    group_id = int(group_id_str)
-    app_id   = int(app_id_str)
-
-    if await db.is_banned(user.id):
-        await query.edit_message_text("🚫 أنت محظور.")
-        return
-
-    reacted = await db.has_reacted(user.id, group_id)
-    if not reacted:
-        await query.edit_message_text(NOT_REACTED_TEXT)
-        return
-
-    fts = await db.get_filetypes_in_app(group_id, app_id)
-    if not fts:
-        await query.edit_message_text("❌ لا توجد ملفات في هذا التطبيق.")
-        return
-
-    if len(fts) == 1:
-        # Go directly to files
-        files = await db.get_files_by_app_and_type(group_id, app_id, fts[0]["id"])
-        group = await db.get_group(group_id)
-        await query.delete_message()
-        await _send_files_to_user(context, user.id, group_id, files, group)
-        return
-
-    app = await db.get_app(app_id)
-    await query.edit_message_text(
-        f"┏━━━━━━━━━━━━━━━━━━━━━┓\n"
-        f"  {app['emoji']} {app['name']}\n"
-        f"┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
-        "🎯 اختر نوع الملف:",
-        reply_markup=kb.user_app_filetype_menu(fts, group_id, app_id)
-    )
-
-
-async def handle_user_app_filetype(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user  = update.effective_user
-    await query.answer()
-
-    # uappft_{group_id}_{app_id}_{file_type}
-    parts     = query.data.split("_", 3)
-    group_id  = int(parts[1])
-    app_id    = int(parts[2])
-    file_type = parts[3]
-
-    if await db.is_banned(user.id):
-        await query.edit_message_text("🚫 أنت محظور.")
-        return
-
-    reacted = await db.has_reacted(user.id, group_id)
-    if not reacted:
-        await query.edit_message_text(NOT_REACTED_TEXT)
-        return
-
-    files = await db.get_files_by_app_and_type(group_id, app_id, file_type)
-    if not files:
-        await query.edit_message_text("❌ لا توجد ملفات.")
-        return
-
-    group = await db.get_group(group_id)
-    await query.delete_message()
-    await _send_files_to_user(context, user.id, group_id, files, group)
-
-
-# ════════════════════════════════════════════════════════
-#  Core: show file type selector (deep link entry)
-# ════════════════════════════════════════════════════════
-async def handle_receive_files(update_or_none, context, user_id: int, group_id: int):
-    """Entry from deep link — check force sub, then show type selector"""
+async def handle_receive_files(update_obj, context, user_id: int, group_id: int):
     not_joined = await check_force_sub(context.bot, user_id)
     if not_joined:
-        names = "، ".join([s["target_name"] for s in not_joined])
-        text  = FORCE_SUB_TEXT.replace("{target_name}", names)
-        if update_or_none and hasattr(update_or_none, "message") and update_or_none.message:
-            await update_or_none.message.reply_text(
-                text, reply_markup=kb.force_sub_user_buttons(not_joined))
+        names  = "، ".join([s["target_name"] for s in not_joined])
+        text   = FORCE_SUB_TEXT.replace("{target_name}", names)
+        markup = kb.force_sub_user_buttons(not_joined)
+        if update_obj and hasattr(update_obj, "message") and update_obj.message:
+            await update_obj.message.reply_text(text, reply_markup=markup)
         else:
-            await context.bot.send_message(
-                chat_id=user_id, text=text,
-                reply_markup=kb.force_sub_user_buttons(not_joined))
+            await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
         return
 
     reacted = await db.has_reacted(user_id, group_id)
     if not reacted:
         msg = NOT_REACTED_TEXT
-        if update_or_none and hasattr(update_or_none, "message") and update_or_none.message:
-            await update_or_none.message.reply_text(msg)
+        if update_obj and hasattr(update_obj, "message") and update_obj.message:
+            await update_obj.message.reply_text(msg)
         else:
             await context.bot.send_message(chat_id=user_id, text=msg)
         return
@@ -325,37 +187,31 @@ async def handle_receive_files(update_or_none, context, user_id: int, group_id: 
 
 
 async def handle_receive_files_direct(context, user_id: int, group_id: int):
-    """Show app/filetype selector — user picks what they want"""
     group = await db.get_group(group_id)
     if not group:
-        await context.bot.send_message(chat_id=user_id, text="❌ المجموعة غير موجودة.")
+        await context.bot.send_message(chat_id=user_id, text="❌ الملفات غير موجودة أو انتهت صلاحيتها.")
         return
 
     all_files = await db.get_files_in_group(group_id)
     if not all_files:
-        await context.bot.send_message(chat_id=user_id, text="❌ لا توجد ملفات.")
+        await context.bot.send_message(chat_id=user_id, text="❌ لا توجد ملفات حالياً.")
         return
 
-    # Check apps
     apps_in_group = await db.get_apps_in_group(group_id)
-
     if apps_in_group:
-        # Show apps menu
         title = group.get("title") or "الملفات الجديدة"
-        text  = (
-            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
-            f"  📦 {title}\n"
-            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
-            "📱 اختر التطبيق:"
-        )
         await context.bot.send_message(
             chat_id=user_id,
-            text=text,
+            text=(
+                "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+                f"  📦 {title}\n"
+                "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                "📱 اختر التطبيق:"
+            ),
             reply_markup=kb.user_app_menu(apps_in_group, group_id)
         )
         return
 
-    # No apps — show file types
     types_in_group = list({f["file_type"] for f in all_files})
     all_fts        = await db.get_file_types()
     fts_available  = [ft for ft in all_fts if ft["id"] in types_in_group]
@@ -366,21 +222,19 @@ async def handle_receive_files_direct(context, user_id: int, group_id: int):
         return
 
     title = group.get("title") or "الملفات الجديدة"
-    text  = (
-        "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
-        f"  📦 {title}\n"
-        "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
-        "🎯 اختر نوع الملف:"
-    )
     await context.bot.send_message(
         chat_id=user_id,
-        text=text,
+        text=(
+            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+            f"  📦 {title}\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+            "🎯 اختر نوع الملف:"
+        ),
         reply_markup=kb.user_filetype_menu(fts_available, group_id)
     )
 
 
-async def _show_app_or_type_menu(query_or_none, context, user_id: int,
-                                  group_id: int, edit: bool = False):
+async def _show_app_or_type_menu(query_obj, context, user_id, group_id, edit=False):
     group         = await db.get_group(group_id)
     apps_in_group = await db.get_apps_in_group(group_id)
     title = group.get("title") if group else "الملفات الجديدة"
@@ -398,15 +252,154 @@ async def _show_app_or_type_menu(query_or_none, context, user_id: int,
                      f"┗━━━━━━━━━━━━━━━━━━━━━┛\n\n🎯 اختر نوع الملف:")
         markup    = kb.user_filetype_menu(fts, group_id)
 
-    if edit and query_or_none:
-        await query_or_none.edit_message_text(text, reply_markup=markup)
-    elif query_or_none:
-        await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
+    if edit and query_obj:
+        try:
+            await query_obj.edit_message_text(text, reply_markup=markup)
+            return
+        except Exception:
+            pass
+    await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
+
+
+async def handle_user_filetype(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user  = update.effective_user
+    await query.answer()
+
+    parts    = query.data.split("_", 2)
+    group_id = int(parts[1])
+    sub      = parts[2]
+
+    if sub == "back":
+        await _show_app_or_type_menu(query, context, user.id, group_id, edit=True)
+        return
+
+    reacted = await db.has_reacted(user.id, group_id)
+    if not reacted:
+        try:
+            await query.edit_message_text(NOT_REACTED_TEXT)
+        except Exception:
+            pass
+        return
+
+    apps_in_group = await db.get_apps_in_group(group_id)
+    if apps_in_group:
+        await _show_app_or_type_menu(query, context, user.id, group_id, edit=True)
+        return
+
+    all_files = await db.get_files_in_group(group_id)
+    files     = [f for f in all_files if f["file_type"] == sub]
+    if not files:
+        try:
+            await query.edit_message_text("❌ لا توجد ملفات من هذا النوع.")
+        except Exception:
+            pass
+        return
+
+    group = await db.get_group(group_id)
+    try:
+        await query.delete_message()
+    except Exception:
+        pass
+    await _send_files_to_user(context, user.id, group_id, files, group)
+
+
+async def handle_user_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user  = update.effective_user
+    await query.answer()
+
+    _, group_id_str, app_id_str = query.data.split("_", 2)
+    group_id = int(group_id_str)
+    app_id   = int(app_id_str)
+
+    if await db.is_banned(user.id):
+        try:
+            await query.edit_message_text("🚫 أنت محظور.")
+        except Exception:
+            pass
+        return
+
+    reacted = await db.has_reacted(user.id, group_id)
+    if not reacted:
+        try:
+            await query.edit_message_text(NOT_REACTED_TEXT)
+        except Exception:
+            pass
+        return
+
+    fts = await db.get_filetypes_in_app(group_id, app_id)
+    if not fts:
+        try:
+            await query.edit_message_text("❌ لا توجد ملفات في هذا التطبيق.")
+        except Exception:
+            pass
+        return
+
+    if len(fts) == 1:
+        files = await db.get_files_by_app_and_type(group_id, app_id, fts[0]["id"])
+        group = await db.get_group(group_id)
+        try:
+            await query.delete_message()
+        except Exception:
+            pass
+        await _send_files_to_user(context, user.id, group_id, files, group)
+        return
+
+    app = await db.get_app(app_id)
+    try:
+        await query.edit_message_text(
+            f"┏━━━━━━━━━━━━━━━━━━━━━┓\n  {app['emoji']} {app['name']}\n"
+            f"┗━━━━━━━━━━━━━━━━━━━━━┛\n\n🎯 اختر نوع الملف:",
+            reply_markup=kb.user_app_filetype_menu(fts, group_id, app_id)
+        )
+    except Exception:
+        pass
+
+
+async def handle_user_app_filetype(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user  = update.effective_user
+    await query.answer()
+
+    parts     = query.data.split("_", 3)
+    group_id  = int(parts[1])
+    app_id    = int(parts[2])
+    file_type = parts[3]
+
+    if await db.is_banned(user.id):
+        try:
+            await query.edit_message_text("🚫 أنت محظور.")
+        except Exception:
+            pass
+        return
+
+    reacted = await db.has_reacted(user.id, group_id)
+    if not reacted:
+        try:
+            await query.edit_message_text(NOT_REACTED_TEXT)
+        except Exception:
+            pass
+        return
+
+    files = await db.get_files_by_app_and_type(group_id, app_id, file_type)
+    if not files:
+        try:
+            await query.edit_message_text("❌ لا توجد ملفات.")
+        except Exception:
+            pass
+        return
+
+    group = await db.get_group(group_id)
+    try:
+        await query.delete_message()
+    except Exception:
+        pass
+    await _send_files_to_user(context, user.id, group_id, files, group)
 
 
 async def _send_files_to_user(context, user_id: int, group_id: int,
                                files: list, group=None):
-    """Actually send files to user privately — clean, no extra text"""
     if not group:
         group = await db.get_group(group_id)
 
@@ -414,7 +407,6 @@ async def _send_files_to_user(context, user_id: int, group_id: int,
     ft_map  = {ft["id"]: ft for ft in all_fts}
     logo    = (group.get("logo_file_id") if group else "") or await db.get_setting("bot_logo")
 
-    # Send logo once if available
     if logo:
         try:
             await context.bot.send_photo(
@@ -431,12 +423,10 @@ async def _send_files_to_user(context, user_id: int, group_id: int,
         except Exception:
             pass
 
-    # Send each file
     for f in files:
-        ft   = ft_map.get(f["file_type"], {"emoji": "📦", "name": f["file_type"]})
+        ft  = ft_map.get(f["file_type"], {"emoji": "📦", "name": f["file_type"]})
         desc = f.get("file_caption") or f.get("file_name") or "ملف"
         cap  = f"{ft['emoji']} *{ft['name']}*\n`{desc}`"
-
         try:
             await context.bot.send_document(
                 chat_id=user_id,
@@ -450,18 +440,11 @@ async def _send_files_to_user(context, user_id: int, group_id: int,
 
     await db.add_delivery(user_id, group_id)
 
-    # Update channel post counters
     rc = await db.reaction_count(group_id)
     dc = await db.delivery_count(group_id)
-    bot_username = context.bot.username
-    if group and group.get("channel_id"):
-        # We stored message_id in publish_groups? No — it's per file.
-        # We update via files table
-        pass
     try:
-        # Try updating the last known message
-        from database import DB
         import aiosqlite
+        from database import DB
         async with aiosqlite.connect(DB) as dbc:
             cur = await dbc.execute(
                 "SELECT channel_id, message_id FROM files WHERE group_id=? AND message_id>0 LIMIT 1",
@@ -469,9 +452,8 @@ async def _send_files_to_user(context, user_id: int, group_id: int,
             r = await cur.fetchone()
             if r:
                 await context.bot.edit_message_reply_markup(
-                    chat_id=r[0],
-                    message_id=r[1],
-                    reply_markup=kb.channel_post_buttons(group_id, rc, dc, bot_username)
+                    chat_id=r[0], message_id=r[1],
+                    reply_markup=kb.channel_post_buttons(group_id, rc, dc, context.bot.username)
                 )
     except Exception:
         pass
