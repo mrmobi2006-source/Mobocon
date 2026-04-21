@@ -243,9 +243,221 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=kb.cancel_btn()
         )
 
+    # ── Apps ───────────────────────────────────────────
+    elif data == "adm_apps":
+        apps = await db.get_all_apps()
+        text = (
+            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+            "      📱 التطبيقات\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+        )
+        if apps:
+            for a in apps:
+                text += f"{a['emoji']} {a['name']}\n"
+        else:
+            text += "لا توجد تطبيقات مضافة.\n"
+        await query.edit_message_text(text, reply_markup=kb.apps_manage_menu(apps))
+
+    elif data == "adm_addapp":
+        context.user_data["step"] = "addapp_emoji"
+        await query.edit_message_text(
+            "📱 *إضافة تطبيق جديد*\n\nأرسل إيموجي التطبيق:",
+            parse_mode="Markdown",
+            reply_markup=kb.cancel_btn()
+        )
+
+    elif data.startswith("delapp_"):
+        app_id = int(data[7:])
+        await db.remove_app(app_id)
+        apps = await db.get_all_apps()
+        await query.edit_message_text(
+            "✅ تم حذف التطبيق.",
+            reply_markup=kb.apps_manage_menu(apps)
+        )
+
+    # ── Delete file type ───────────────────────────────
+    elif data.startswith("delft_"):
+        ft_id = data[6:]
+        async with __import__('aiosqlite').connect(__import__('database').DB) as dbc:
+            await dbc.execute("UPDATE file_types SET is_active=0 WHERE id=?", (ft_id,))
+            await dbc.commit()
+        fts = await db.get_file_types()
+        await query.edit_message_text(
+            f"✅ تم حذف النوع `{ft_id}`.",
+            parse_mode="Markdown",
+            reply_markup=kb.filetypes_menu(fts)
+        )
+
+    # ── Ban management ─────────────────────────────────
+    elif data == "adm_bans":
+        banned = await db.get_all_banned()
+        text   = (
+            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+            "      🚫 المحظورون\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+            f"إجمالي المحظورين: {len(banned)}\n"
+        )
+        await query.edit_message_text(text, reply_markup=kb.ban_menu(banned))
+
+    elif data == "adm_ban_pick":
+        users = await db.get_all_users_list()
+        context.user_data["ban_page"] = 0
+        await query.edit_message_text(
+            "👤 اختر المستخدم للحظر:",
+            reply_markup=kb.users_pick_menu(users, "ban", 0)
+        )
+
+    elif data.startswith("pick_ban_"):
+        target_id = int(data[9:])
+        context.user_data["step"]       = "ban_reason"
+        context.user_data["ban_target"] = target_id
+        await query.edit_message_text(
+            "✏️ أرسل سبب الحظر (أو `-` بدون سبب):",
+            reply_markup=kb.cancel_btn()
+        )
+
+    elif data.startswith("unban_"):
+        suffix = data[6:]
+        if suffix == "all":
+            await db.unban_all()
+            await query.edit_message_text("✅ تم رفع الحظر عن الجميع.",
+                                          reply_markup=kb.back_btn("adm_bans"))
+        else:
+            await db.unban_user(int(suffix))
+            banned = await db.get_all_banned()
+            await query.edit_message_text("✅ تم رفع الحظر.",
+                                          reply_markup=kb.ban_menu(banned))
+
+    elif data.startswith("page_ban_"):
+        page  = int(data[9:])
+        users = await db.get_all_users_list()
+        await query.edit_message_text(
+            "👤 اختر المستخدم للحظر:",
+            reply_markup=kb.users_pick_menu(users, "ban", page)
+        )
+
+    # ── VIP management ─────────────────────────────────
+    elif data == "adm_vip":
+        vip_users  = await db.get_all_vip()
+        vip_enabled = await db.get_setting("vip_enabled", "0") == "1"
+        text = (
+            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+            "        💎 نظام VIP\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+            f"الحالة: {'🟢 مفعّل' if vip_enabled else '🔴 موقوف'}\n"
+            f"عدد VIP: {len(vip_users)}\n"
+        )
+        await query.edit_message_text(text, reply_markup=kb.vip_menu(vip_users, vip_enabled))
+
+    elif data == "adm_toggle_vip":
+        cur = await db.get_setting("vip_enabled", "0")
+        nv  = "0" if cur == "1" else "1"
+        await db.set_setting("vip_enabled", nv)
+        msg = "🟢 تم تفعيل نظام VIP!" if nv == "1" else "🔴 تم إيقاف نظام VIP!"
+        await query.edit_message_text(msg, reply_markup=kb.back_btn("adm_vip"))
+
+    elif data == "adm_addvip":
+        users = await db.get_all_users_list()
+        await query.edit_message_text(
+            "👤 اختر المستخدم لإعطائه VIP:",
+            reply_markup=kb.users_pick_menu(users, "vip", 0)
+        )
+
+    elif data.startswith("pick_vip_"):
+        target_id = int(data[9:])
+        context.user_data["step"]       = "vip_duration"
+        context.user_data["vip_target"] = target_id
+        await query.edit_message_text(
+            "⏳ *مدة VIP*\n\nأرسل المدة بأحد هذه الأشكال:\n"
+            "• `7d` لـ 7 أيام\n"
+            "• `30d` لـ 30 يوماً\n"
+            "• `permanent` دائم",
+            parse_mode="Markdown",
+            reply_markup=kb.cancel_btn()
+        )
+
+    elif data.startswith("rmvip_"):
+        suffix = data[6:]
+        if suffix == "all":
+            await db.remove_all_vip()
+            await query.edit_message_text("✅ تم إزالة كل VIP.",
+                                          reply_markup=kb.back_btn("adm_vip"))
+        else:
+            await db.remove_vip(int(suffix))
+            vip_users   = await db.get_all_vip()
+            vip_enabled = await db.get_setting("vip_enabled", "0") == "1"
+            await query.edit_message_text("✅ تم إزالة VIP.",
+                                          reply_markup=kb.vip_menu(vip_users, vip_enabled))
+
+    elif data.startswith("page_vip_"):
+        page  = int(data[9:])
+        users = await db.get_all_users_list()
+        await query.edit_message_text(
+            "👤 اختر المستخدم:",
+            reply_markup=kb.users_pick_menu(users, "vip", page)
+        )
+
+    elif data == "adm_set_vipmsg":
+        context.user_data["step"] = "set_vipmsg"
+        cur = await db.get_setting("vip_message")
+        await query.edit_message_text(
+            f"✏️ رسالة VIP الحالية:\n\n{cur}\n\nأرسل الرسالة الجديدة:",
+            reply_markup=kb.cancel_btn()
+        )
+
+    # ── Colors ─────────────────────────────────────────
+    elif data == "adm_colors":
+        await query.edit_message_text(
+            "🎨 *اختر لون/طابع الأزرار:*\n\n"
+            "_(هذا يؤثر على إيموجيات الأزرار في المنشورات القادمة)_",
+            parse_mode="Markdown",
+            reply_markup=kb.color_menu()
+        )
+
+    elif data.startswith("setcolor_"):
+        color = data[9:]
+        await db.set_setting("button_color", color)
+        color_names = {
+            "blue": "🔵 أزرق", "red": "🔴 أحمر", "green": "🟢 أخضر",
+            "gold": "🟡 ذهبي", "white": "⚪ أبيض", "purple": "🟣 بنفسجي"
+        }
+        await query.edit_message_text(
+            f"✅ تم تعيين اللون: {color_names.get(color, color)}",
+            reply_markup=kb.back_btn("adm_settings")
+        )
+
     # ── Publish ────────────────────────────────────────
     elif data == "adm_publish":
         await _start_publish(query, context, user.id)
+
+    elif data.startswith("pub_app_") and not data.startswith("pub_appft_"):
+        app_id = int(data[8:])
+        context.user_data["current_app"] = app_id
+        fts = await db.get_file_types()
+        app = await db.get_app(app_id)
+        context.user_data["step"] = "pub_appft"
+        await query.edit_message_text(
+            f"📱 *{app['emoji']} {app['name']}*\n\nاختر نوع الملف:",
+            parse_mode="Markdown",
+            reply_markup=kb.publish_app_filetype_menu(fts, app_id)
+        )
+
+    elif data.startswith("pub_appft_"):
+        parts  = data[10:].split("_", 1)
+        app_id = int(parts[0])
+        ft_id  = parts[1]
+        context.user_data["current_app"]  = app_id
+        context.user_data["current_type"] = ft_id
+        context.user_data["step"]         = "pub_file"
+        fts = await db.get_file_types()
+        ft  = next((f for f in fts if f["id"] == ft_id), {"emoji": "📦", "name": ft_id})
+        app = await db.get_app(app_id)
+        await query.edit_message_text(
+            f"📤 أرسل ملف *{ft['emoji']} {ft['name']}*\n"
+            f"📱 التطبيق: *{app['emoji']} {app['name']}*",
+            parse_mode="Markdown",
+            reply_markup=kb.cancel_btn()
+        )
 
     elif data.startswith("pub_addfile_"):
         ft_id = data[12:]
@@ -318,17 +530,29 @@ async def _start_publish(query, context, user_id: int):
     await db.clear_pending(user_id)
     await db.set_pending(user_id, {"files": [], "step": "type"})
     context.user_data.clear()
-    context.user_data["step"] = "pub_type"
 
-    fts = await db.get_file_types()
-    await query.edit_message_text(
-        "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
-        "     📤 نشر ملفات جديدة\n"
-        "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
-        "📌 اختر نوع الملف الأول:\n"
-        "_(يمكنك إضافة أكثر من ملف من أنواع مختلفة)_",
-        reply_markup=kb.publish_type_menu(fts)
-    )
+    apps = await db.get_all_apps()
+
+    if apps:
+        context.user_data["step"] = "pub_app_or_done"
+        await query.edit_message_text(
+            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+            "     📤 نشر ملفات جديدة\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+            "📱 اختر التطبيق الأول لإضافة ملف له:\n"
+            "_(يمكنك إضافة ملفات لعدة تطبيقات)_",
+            reply_markup=kb.publish_app_menu(apps)
+        )
+    else:
+        fts = await db.get_file_types()
+        context.user_data["step"] = "pub_type"
+        await query.edit_message_text(
+            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+            "     📤 نشر ملفات جديدة\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+            "📁 اختر نوع الملف الأول:",
+            reply_markup=kb.publish_type_menu(fts)
+        )
 
 
 async def _do_publish(query, context, admin_id: int):
@@ -343,11 +567,12 @@ async def _do_publish(query, context, admin_id: int):
         await query.edit_message_text("❌ لا توجد ملفات.")
         return
 
-    all_fts  = await db.get_file_types()
-    ft_map   = ft_map_from_list(all_fts)
-    channels = await db.get_all_channels()
+    all_fts   = await db.get_file_types()
+    ft_map    = ft_map_from_list(all_fts)
+    all_apps  = await db.get_all_apps()
+    app_map   = {a["id"]: a for a in all_apps}
+    channels  = await db.get_all_channels()
 
-    # Build target channels list
     admin = await db.get_admin(admin_id)
     if ch_id == "ALL":
         targets = channels
@@ -362,13 +587,16 @@ async def _do_publish(query, context, admin_id: int):
         await query.edit_message_text("❌ لا توجد قنوات مصرح لك بالنشر فيها.")
         return
 
-    post_text   = build_post_text(title, caption, files, ft_map)
+    # ✅ Deactivate ALL previous groups and files
+    await db.deactivate_old_groups()
+
+    # Build post text with apps + types
+    post_text = _build_post_text_with_apps(title, caption, files, ft_map, app_map)
     bot_username = context.bot.username
     success = 0
 
     for ch in targets:
         try:
-            # Create the group first (to get group_id)
             group_id = await db.create_group(
                 title=title,
                 caption=caption,
@@ -377,7 +605,6 @@ async def _do_publish(query, context, admin_id: int):
                 channel_id=ch["channel_id"]
             )
 
-            # Send channel post
             if logo:
                 msg = await context.bot.send_photo(
                     chat_id=ch["channel_id"],
@@ -390,7 +617,6 @@ async def _do_publish(query, context, admin_id: int):
                     text=post_text,
                 )
 
-            # Save files to DB and link to group + message
             for i, f in enumerate(files):
                 await db.add_file_to_group(
                     group_id=group_id,
@@ -400,10 +626,10 @@ async def _do_publish(query, context, admin_id: int):
                     file_caption=f.get("file_caption", ""),
                     sort_order=i,
                     channel_id=ch["channel_id"],
-                    message_id=msg.message_id
+                    message_id=msg.message_id,
+                    app_id=f.get("app_id", 0)
                 )
 
-            # Add buttons
             markup = kb.channel_post_buttons(group_id, 0, 0, bot_username)
             if logo:
                 await context.bot.edit_message_caption(
@@ -430,12 +656,69 @@ async def _do_publish(query, context, admin_id: int):
     context.user_data.clear()
     await query.edit_message_text(
         f"┏━━━━━━━━━━━━━━━━━━━━━┓\n"
-        f"  ✅ تم النشر بنجاح!\n"
+        f"   ✅ تم النشر بنجاح!\n"
         f"┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
         f"📢 نُشر في {success}/{len(targets)} قناة\n"
-        f"📁 عدد الملفات: {len(files)}",
+        f"📁 عدد الملفات: {len(files)}\n"
+        f"🗑 تم حذف الملفات القديمة تلقائياً",
         reply_markup=kb.back_btn("adm_main")
     )
+
+
+def _build_post_text_with_apps(title: str, caption: str, files: list,
+                                ft_map: dict, app_map: dict) -> str:
+    lines = []
+    if title:
+        lines.append(f"⚡️ {title}")
+        lines.append("┄" * 22)
+    if caption:
+        lines.append(caption)
+        lines.append("")
+
+    # Group by app then by type
+    by_app: dict = {}
+    no_app = []
+    for f in files:
+        aid = f.get("app_id", 0)
+        if aid and aid in app_map:
+            by_app.setdefault(aid, []).append(f)
+        else:
+            no_app.append(f)
+
+    for app_id, app_files in by_app.items():
+        app = app_map[app_id]
+        lines.append(f"{app['emoji']} *{app['name']}:*")
+        by_type: dict = {}
+        for f in app_files:
+            by_type.setdefault(f["file_type"], []).append(f)
+        for ftype, flist in by_type.items():
+            ft = ft_map.get(ftype, {"emoji": "📦", "name": ftype})
+            lines.append(f"  {ft['emoji']} {ft['name']}:")
+            for i, f in enumerate(flist, 1):
+                desc = f.get("file_caption") or f.get("file_name") or f"ملف {i}"
+                lines.append(f"    {i}. {desc}")
+        lines.append("")
+
+    if no_app:
+        by_type2: dict = {}
+        for f in no_app:
+            by_type2.setdefault(f["file_type"], []).append(f)
+        for ftype, flist in by_type2.items():
+            ft = ft_map.get(ftype, {"emoji": "📦", "name": ftype})
+            lines.append(f"{ft['emoji']} {ft['name']}:")
+            for i, f in enumerate(flist, 1):
+                desc = f.get("file_caption") or f.get("file_name") or f"ملف {i}"
+                lines.append(f"  {i}. {desc}")
+        lines.append("")
+
+    lines.append("┄" * 22)
+    lines.append("📌 طريقة الاستلام:")
+    lines.append("  1️⃣ فعّل البوت بالضغط على ⚡️")
+    lines.append("  2️⃣ ادعمنا بالضغط على ❤️")
+    lines.append("  3️⃣ اضغط 📥 لاستلام الملفات")
+    lines.append("")
+    lines.append("⚡ سارع قبل انتهاء الصلاحية!")
+    return "\n".join(lines)
 
 
 # ════════════════════════════════════════════════════════
@@ -526,7 +809,98 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📣 انتهى البث!\n✅ نجح: {sent}\n❌ فشل: {failed}"
         )
 
-    # ── Publish: receive file ──────────────────────────
+    # ── Add app ────────────────────────────────────────
+    elif step == "addapp_emoji":
+        context.user_data["new_app_emoji"] = (msg.text or "").strip()
+        context.user_data["step"]          = "addapp_name"
+        await msg.reply_text("✅ أرسل اسم التطبيق:")
+
+    elif step == "addapp_name":
+        emoji = context.user_data.get("new_app_emoji", "📱")
+        name  = (msg.text or "").strip()
+        await db.add_app(name, emoji)
+        context.user_data.clear()
+        await msg.reply_text(f"✅ تمت إضافة التطبيق: {emoji} {name}")
+
+    # ── Ban reason ─────────────────────────────────────
+    elif step == "ban_reason":
+        target_id = context.user_data.get("ban_target")
+        reason    = "" if (msg.text or "").strip() == "-" else (msg.text or "").strip()
+        try:
+            chat  = await context.bot.get_chat(target_id)
+            uname = chat.username or ""
+            fname = chat.full_name or str(target_id)
+        except Exception:
+            uname = ""
+            fname = str(target_id)
+        await db.ban_user(target_id, uname, fname, reason)
+        context.user_data.clear()
+        await msg.reply_text(
+            f"✅ تم حظر المستخدم:\n"
+            f"👤 {fname}\n"
+            f"🆔 `{target_id}`\n"
+            f"📝 السبب: {reason or 'لا يوجد'}",
+            parse_mode="Markdown"
+        )
+
+    # ── VIP duration ───────────────────────────────────
+    elif step == "vip_duration":
+        from datetime import datetime, timedelta
+        target_id = context.user_data.get("vip_target")
+        raw       = (msg.text or "").strip().lower()
+
+        if raw == "permanent":
+            expires = "permanent"
+        elif raw.endswith("d"):
+            try:
+                days    = int(raw[:-1])
+                expires = (datetime.now() + timedelta(days=days)).isoformat()
+            except ValueError:
+                await msg.reply_text("❌ صيغة خاطئة. استخدم `7d` أو `30d` أو `permanent`.",
+                                     parse_mode="Markdown")
+                return
+        else:
+            await msg.reply_text("❌ صيغة خاطئة. استخدم `7d` أو `30d` أو `permanent`.",
+                                 parse_mode="Markdown")
+            return
+
+        try:
+            chat  = await context.bot.get_chat(target_id)
+            uname = chat.username or ""
+            fname = chat.full_name or str(target_id)
+        except Exception:
+            uname = ""
+            fname = str(target_id)
+
+        await db.add_vip(target_id, uname, fname, expires, user.id)
+        context.user_data.clear()
+
+        exp_text = "دائم" if expires == "permanent" else expires[:10]
+        await msg.reply_text(
+            f"✅ تمت إضافة VIP:\n"
+            f"💎 {fname}\n"
+            f"🆔 `{target_id}`\n"
+            f"⏳ ينتهي: {exp_text}",
+            parse_mode="Markdown"
+        )
+        # Notify the user
+        vip_msg = await db.get_setting("vip_message")
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=f"💎 *مبروك! تم تفعيل VIP لك*\n\n{vip_msg}\n\n⏳ المدة: {exp_text}",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    # ── Set VIP message ────────────────────────────────
+    elif step == "set_vipmsg":
+        await db.set_setting("vip_message", (msg.text or "").strip())
+        context.user_data.clear()
+        await msg.reply_text("✅ تم تحديث رسالة VIP!")
+
+    # ── Publish: app selection step ────────────────────
     elif step == "pub_file":
         file_id = file_name = file_caption = ""
         if msg.document:
@@ -549,7 +923,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("❌ أرسل ملفاً صحيحاً.")
             return
 
-        ft_id   = context.user_data.get("current_type", "general")
+        ft_id  = context.user_data.get("current_type", "general")
+        app_id = context.user_data.get("current_app", 0)
+
         pending = await db.get_pending(user.id)
         files   = pending.get("files", [])
         files.append({
@@ -557,18 +933,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "file_type":    ft_id,
             "file_name":    file_name,
             "file_caption": file_caption,
+            "app_id":       app_id,
         })
         await db.update_pending(user.id, {"files": files})
 
         fts = await db.get_file_types()
         ft  = next((f for f in fts if f["id"] == ft_id), {"emoji": "📦", "name": ft_id})
+        apps = await db.get_all_apps()
+
         await msg.reply_text(
-            f"✅ تم إضافة: {ft['emoji']} {file_name}\n\n"
+            f"✅ تم إضافة: {ft['emoji']} {file_name}\n"
             f"📦 إجمالي الملفات: {len(files)}\n\n"
-            "اختر نوع ملف آخر أو اضغط ✅ انتهيت:",
-            reply_markup=kb.publish_type_menu(fts)
+            "اختر تطبيق وملف آخر أو اضغط ✅ انتهيت:",
+            reply_markup=kb.publish_app_menu(apps) if apps else kb.publish_type_menu(fts)
         )
-        context.user_data["step"] = "pub_type"
+        context.user_data["step"] = "pub_app_or_done"
 
     # ── Publish: logo ──────────────────────────────────
     elif step == "pub_logo":
