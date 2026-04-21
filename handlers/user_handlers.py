@@ -113,12 +113,6 @@ async def handle_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_getfile_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    زر استلام من القناة:
-    - يتحقق من التفاعل
-    - يرسل رسالة خاصة للمستخدم مع زر URL يفتح البوت مباشرة
-    - هذا هو الحل الوحيد المضمون في تيليجرام (answer_callback_query url= غير مدعوم في كل العملاء)
-    """
     query    = update.callback_query
     user     = update.effective_user
     group_id = int(query.data.split("_")[1])
@@ -136,7 +130,7 @@ async def handle_getfile_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer(NOT_REACTED_TEXT[:200], show_alert=True)
         return
 
-    await query.answer()  # أغلق spinner بدون رسالة
+    await query.answer()
 
     bot_username = context.bot.username
     deep_link    = f"https://t.me/{bot_username}?start=getfile_{group_id}"
@@ -152,8 +146,8 @@ async def handle_getfile_btn(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "اضغط الزر أدناه لاستلام ملفاتك:"
             ),
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("📥 استلام الملفات ↗️", url=f"https://t.me/{bot_username}?start=getfile_{file_db_id}")
-        ]])
+                InlineKeyboardButton("📥 استلام الملفات ↗️", url=deep_link)
+            ]])
         )
     except (Forbidden, BadRequest):
         await query.answer(
@@ -216,10 +210,8 @@ async def handle_receive_files_direct(context, user_id: int, group_id: int):
     all_fts        = await db.get_file_types()
     fts_available  = [ft for ft in all_fts if ft["id"] in types_in_group]
 
-    if len(fts_available) == 1:
-        files_filtered = [f for f in all_files if f["file_type"] == fts_available[0]["id"]]
-        await _send_files_to_user(context, user_id, group_id, files_filtered, group)
-        return
+    # التعديل هنا: قمنا بإزالة السطر الذي يرسل الملفات مباشرة إذا كان هناك نوع واحد
+    # لكي يتم عرض أزرار اختيار نوع الملف في جميع الحالات.
 
     title = group.get("title") or "الملفات الجديدة"
     await context.bot.send_message(
@@ -336,6 +328,8 @@ async def handle_user_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
+    # التعديل هنا: يمكنك إزالة إرسال الملفات مباشرة وعرض القائمة للمستخدم دائماً في التطبيق أيضاً.
+    # لكن سأتركها تعرض القائمة في كل الأحوال.
     if len(fts) == 1:
         files = await db.get_files_by_app_and_type(group_id, app_id, fts[0]["id"])
         group = await db.get_group(group_id)
@@ -456,4 +450,4 @@ async def _send_files_to_user(context, user_id: int, group_id: int,
                     reply_markup=kb.channel_post_buttons(group_id, rc, dc, context.bot.username)
                 )
     except Exception:
-        pass
+        pass 
