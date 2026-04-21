@@ -7,8 +7,7 @@ from config import BOT_TOKEN
 from database import init_db
 from handlers.user_handlers import (
     start, check_sub_callback, handle_react,
-    handle_getfile_btn, handle_user_filetype,
-    handle_user_app, handle_user_app_filetype
+    handle_user_filetype, handle_user_app, handle_user_app_filetype
 )
 from handlers.admin_handlers import (
     admin_cmd, admin_callback, handle_message,
@@ -34,9 +33,11 @@ def main():
 
     # ── User ──────────────────────────────────────────
     app.add_handler(CommandHandler("start", start))
+
+    # زر استلام الآن URL مباشر — لا يحتاج callback handler
+    # فقط /start?getfile_X يُعالج هنا
     app.add_handler(CallbackQueryHandler(check_sub_callback,       pattern=r"^check_sub$"))
     app.add_handler(CallbackQueryHandler(handle_react,             pattern=r"^react_\d+$"))
-    app.add_handler(CallbackQueryHandler(handle_getfile_btn,       pattern=r"^getfile_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_user_app,          pattern=r"^uapp_\d+_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_user_app_filetype, pattern=r"^uappft_\d+_\d+_.+$"))
     app.add_handler(CallbackQueryHandler(handle_user_filetype,     pattern=r"^userget_\d+_.+$"))
