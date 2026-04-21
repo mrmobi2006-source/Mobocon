@@ -15,11 +15,11 @@ def channel_post_buttons(group_id: int, rc: int, dc: int, bot_username: str) -> 
         )],
         [
             InlineKeyboardButton(
-                f"❤️ تفاعل ({rc})",
+                f"💗 تفاعل ({rc})",
                 callback_data=f"react_{group_id}"
             ),
             InlineKeyboardButton(
-                f"📥 استلام ({dc}) ↗️",
+                f"💌 استلام ({dc}) ",
                 url=f"https://t.me/{bot_username}?start=getfile_{group_id}"
             ),
         ],
