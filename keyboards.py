@@ -4,8 +4,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # ── Channel post buttons ──────────────────────────────────────────
 def channel_post_buttons(group_id: int, rc: int, dc: int, bot_username: str) -> InlineKeyboardMarkup:
     """
-    Row 1: ⚡ فعّل البوت أولاً  (full width, no arrow)
-    Row 2: ❤️ تفاعل (X)  |  📥 استلام (X)
+    Row 1: ⚡ فعّل البوت أولاً  — URL يفتح البوت
+    Row 2: ❤️ تفاعل (callback)  |  📥 استلام (URL مباشر للبوت)
+    زر استلام URL = ينقل المستخدم مباشرة للبوت ويعرض قائمة الملفات
     """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
@@ -13,8 +14,14 @@ def channel_post_buttons(group_id: int, rc: int, dc: int, bot_username: str) -> 
             url=f"https://t.me/{bot_username}?start=activate"
         )],
         [
-            InlineKeyboardButton(f"❤️ تفاعل ({rc})",   callback_data=f"react_{group_id}"),
-            InlineKeyboardButton(f"📥 استلام ({dc})",  callback_data=f"getfile_{group_id}"),
+            InlineKeyboardButton(
+                f"❤️ تفاعل ({rc})",
+                callback_data=f"react_{group_id}"
+            ),
+            InlineKeyboardButton(
+                f"📥 استلام ({dc}) ↗️",
+                url=f"https://t.me/{bot_username}?start=getfile_{group_id}"
+            ),
         ],
     ])
 
