@@ -54,9 +54,9 @@ def build_post_text(title: str, caption: str, files: list, ft_map: dict) -> str:
     lines.append("┄" * 22)
     lines.append("📌 طريقة الاستلام:")
     lines.append("  1️⃣ فعّل البوت بالضغط على ⚡️")
-    lines.append("  2️⃣ ادعمنا بالضغط على ❤️")
-    lines.append("  3️⃣ اضغط 📥 لاستلام الملفات")
+    lines.append("  2️⃣ ادعمنا بالضغط على 💗")
+    lines.append("  3️⃣ اضغط 💌 لاستلام الملفات")
     lines.append("")
-    lines.append("⚡ سارع قبل انتهاء الصلاحية!")
+    lines.append("⚡ سارع قبل مـدة المـلـفـات!")
 
     return "\n".join(lines)
