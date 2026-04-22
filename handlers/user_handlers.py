@@ -205,9 +205,9 @@ async def handle_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dc = await db.delivery_count(group_id)
 
     if is_new:
-        await query.answer("❤️ تم تسجيل دعمك! الآن اضغط 📥 لاستلام الملفات.", show_alert=True)
+        await query.answer("💗 تم تسجيل دعمك! الآن اضغط 💌 لاستلام الملفات.", show_alert=True)
     else:
-        await query.answer("✅ سبق ودعمت! اضغط 📥 لاستلام الملفات.", show_alert=True)
+        await query.answer("✅ سبق ودعمت! اضغط 💌 لاستلام الملفات.", show_alert=True)
 
     try:
         await query.edit_message_reply_markup(
