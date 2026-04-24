@@ -394,15 +394,55 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("rmvip_"):
         suffix = data[6:]
         if suffix == "all":
+            # أرسل إشعار لجميع VIP قبل الحذف
+            vip_list = await db.get_all_vip()
             await db.remove_all_vip()
-            await query.edit_message_text("✅ تم إزالة كل VIP.",
-                                          reply_markup=kb.back_btn("adm_vip"))
+            for v in vip_list:
+                try:
+                    await context.bot.send_message(
+                        chat_id=v["user_id"],
+                        text=(
+                            "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+                            "   💎 انتهاء اشتراك VIP\n"
+                            "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                            "⚠️ تم إلغاء اشتراكك في VIP.\n\n"
+                            "للتجديد تواصل مع الإدارة."
+                        )
+                    )
+                except Exception:
+                    pass
+            await query.edit_message_text(
+                f"✅ تم إزالة كل VIP وإشعار {len(vip_list)} مستخدم.",
+                reply_markup=kb.back_btn("adm_vip")
+            )
         else:
-            await db.remove_vip(int(suffix))
-            vip_users   = await db.get_all_vip()
+            target_id = int(suffix)
+            # جلب بيانات المستخدم قبل الحذف
+            vip_list  = await db.get_all_vip()
+            vip_user  = next((v for v in vip_list if v["user_id"] == target_id), None)
+            await db.remove_vip(target_id)
+            # إشعار المستخدم
+            try:
+                await context.bot.send_message(
+                    chat_id=target_id,
+                    text=(
+                        "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+                        "   💎 انتهاء اشتراك VIP\n"
+                        "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                        "⚠️ تم إلغاء اشتراكك في VIP.\n\n"
+                        "للتجديد تواصل مع الإدارة."
+                    )
+                )
+                notified = "✅ تم إشعاره"
+            except Exception:
+                notified = "⚠️ لم يتم الإشعار (لم يبدأ البوت)"
+            name      = vip_user["full_name"] if vip_user else str(target_id)
+            vip_users = await db.get_all_vip()
             vip_enabled = await db.get_setting("vip_enabled", "0") == "1"
-            await query.edit_message_text("✅ تم إزالة VIP.",
-                                          reply_markup=kb.vip_menu(vip_users, vip_enabled))
+            await query.edit_message_text(
+                f"✅ تم إزالة VIP عن: {name}\n{notified}",
+                reply_markup=kb.vip_menu(vip_users, vip_enabled)
+            )
 
     elif data.startswith("page_vip_"):
         page  = int(data[9:])
@@ -682,6 +722,10 @@ async def _do_publish(query, context, admin_id: int):
 
 def _build_post_text_with_apps(title: str, caption: str, files: list,
                                 ft_map: dict, app_map: dict) -> str:
+    """
+    نص المنشور: العنوان + الوصف + الإرشادات فقط
+    بدون قائمة الملفات
+    """
     lines = []
     if title:
         lines.append(f"⚡️ {title}")
@@ -689,43 +733,6 @@ def _build_post_text_with_apps(title: str, caption: str, files: list,
     if caption:
         lines.append(caption)
         lines.append("")
-
-    # Group by app then by type
-    by_app: dict = {}
-    no_app = []
-    for f in files:
-        aid = f.get("app_id", 0)
-        if aid and aid in app_map:
-            by_app.setdefault(aid, []).append(f)
-        else:
-            no_app.append(f)
-
-    for app_id, app_files in by_app.items():
-        app = app_map[app_id]
-        lines.append(f"{app['emoji']} *{app['name']}:*")
-        by_type: dict = {}
-        for f in app_files:
-            by_type.setdefault(f["file_type"], []).append(f)
-        for ftype, flist in by_type.items():
-            ft = ft_map.get(ftype, {"emoji": "📦", "name": ftype})
-            lines.append(f"  {ft['emoji']} {ft['name']}:")
-            for i, f in enumerate(flist, 1):
-                desc = f.get("file_caption") or f.get("file_name") or f"ملف {i}"
-                lines.append(f"    {i}. {desc}")
-        lines.append("")
-
-    if no_app:
-        by_type2: dict = {}
-        for f in no_app:
-            by_type2.setdefault(f["file_type"], []).append(f)
-        for ftype, flist in by_type2.items():
-            ft = ft_map.get(ftype, {"emoji": "📦", "name": ftype})
-            lines.append(f"{ft['emoji']} {ft['name']}:")
-            for i, f in enumerate(flist, 1):
-                desc = f.get("file_caption") or f.get("file_name") or f"ملف {i}"
-                lines.append(f"  {i}. {desc}")
-        lines.append("")
-
     lines.append("┄" * 22)
     lines.append("📌 طريقة الاستلام:")
     lines.append("  1️⃣ فعّل البوت بالضغط على ⚡️")
@@ -1150,24 +1157,57 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #  Helper: forward any message type
 # ════════════════════════════════════════════════════════
 async def _forward_any(context, chat_id: int, msg):
+    """إرسال أي نوع رسالة مع منع التحميل والتحويل بالكامل"""
     if msg.photo:
         await context.bot.send_photo(
-            chat_id=chat_id, photo=msg.photo[-1].file_id, caption=msg.caption or "")
+            chat_id=chat_id,
+            photo=msg.photo[-1].file_id,
+            caption=msg.caption or "",
+            protect_content=True
+        )
     elif msg.document:
         await context.bot.send_document(
-            chat_id=chat_id, document=msg.document.file_id, caption=msg.caption or "")
+            chat_id=chat_id,
+            document=msg.document.file_id,
+            caption=msg.caption or "",
+            protect_content=True
+        )
     elif msg.video:
         await context.bot.send_video(
-            chat_id=chat_id, video=msg.video.file_id, caption=msg.caption or "")
+            chat_id=chat_id,
+            video=msg.video.file_id,
+            caption=msg.caption or "",
+            protect_content=True
+        )
     elif msg.audio:
         await context.bot.send_audio(
-            chat_id=chat_id, audio=msg.audio.file_id, caption=msg.caption or "")
+            chat_id=chat_id,
+            audio=msg.audio.file_id,
+            caption=msg.caption or "",
+            protect_content=True
+        )
     elif msg.voice:
-        await context.bot.send_voice(chat_id=chat_id, voice=msg.voice.file_id)
+        await context.bot.send_voice(
+            chat_id=chat_id,
+            voice=msg.voice.file_id,
+            protect_content=True
+        )
     elif msg.sticker:
-        await context.bot.send_sticker(chat_id=chat_id, sticker=msg.sticker.file_id)
+        await context.bot.send_sticker(
+            chat_id=chat_id,
+            sticker=msg.sticker.file_id,
+            protect_content=True
+        )
     elif msg.animation:
         await context.bot.send_animation(
-            chat_id=chat_id, animation=msg.animation.file_id, caption=msg.caption or "")
+            chat_id=chat_id,
+            animation=msg.animation.file_id,
+            caption=msg.caption or "",
+            protect_content=True
+        )
     else:
-        await context.bot.send_message(chat_id=chat_id, text=msg.text or "")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=msg.text or "",
+            protect_content=True
+        )
