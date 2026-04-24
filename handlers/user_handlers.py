@@ -78,10 +78,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _handle_getfile(update, context, user, group_id: int):
     """
     يُستدعى مباشرة عند فتح البوت من زر استلام.
-    يتحقق من الاشتراك الإجباري → التفاعل → يعرض قائمة التطبيقات/الملفات
+    الترتيب: force sub → ban → vip → تفاعل → ملفات
     """
-    # Force sub
     if not await db.is_admin(user.id):
+        # 1. Ban check
+        if await db.is_banned(user.id):
+            await update.message.reply_text(
+                "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+                "      🚫 محظور\n"
+                "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                "⛔ أنت محظور من استخدام هذا البوت.")
+            return
+
+        # 2. Force sub
         not_joined = await check_force_sub(context.bot, user.id)
         if not_joined:
             names = "، ".join([s["target_name"] for s in not_joined])
@@ -89,6 +98,26 @@ async def _handle_getfile(update, context, user, group_id: int):
                 FORCE_SUB_TEXT.replace("{target_name}", names),
                 reply_markup=kb.force_sub_user_buttons(not_joined))
             return
+
+        # 3. VIP check — إذا كان النظام مفعّلاً
+        vip_enabled = await db.get_setting("vip_enabled", "0") == "1"
+        if vip_enabled:
+            user_is_vip = await db.is_vip(user.id)
+            if not user_is_vip:
+                vip_msg = await db.get_setting("vip_message",
+                                               "💎 للحصول على VIP تواصل مع @xtt1x")
+                await update.message.reply_text(
+                    "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+                    "      💎 خدمة VIP\n"
+                    "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                    "🔒 هذا المحتوى متاح لأعضاء VIP فقط.\n\n"
+                    f"{vip_msg}",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("💎 طلب VIP",
+                                             url=f"https://t.me/xtt1x")
+                    ]])
+                )
+                return
 
     # تحقق من التفاعل
     reacted = await db.has_reacted(user.id, group_id)
@@ -230,7 +259,7 @@ async def handle_user_filetype(update: Update, context: ContextTypes.DEFAULT_TYP
     sub      = parts[2]
 
     if sub == "back":
-        apps = await db.get_apps_in_group(group_id)
+        apps  = await db.get_apps_in_group(group_id)
         group = await db.get_group(group_id)
         title = group.get("title") if group else "الملفات"
         if apps:
@@ -242,6 +271,23 @@ async def handle_user_filetype(update: Update, context: ContextTypes.DEFAULT_TYP
             except Exception:
                 pass
         return
+
+    # VIP check
+    if not await db.is_admin(user.id):
+        vip_enabled = await db.get_setting("vip_enabled", "0") == "1"
+        if vip_enabled and not await db.is_vip(user.id):
+            vip_msg = await db.get_setting("vip_message", "💎 للحصول على VIP تواصل مع @xtt1x")
+            try:
+                await query.edit_message_text(
+                    f"┏━━━━━━━━━━━━━━━━━━━━━┓\n      💎 خدمة VIP\n"
+                    f"┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                    f"🔒 هذا المحتوى لأعضاء VIP فقط.\n\n{vip_msg}",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("💎 طلب VIP", url="https://t.me/xtt1x")
+                    ]]))
+            except Exception:
+                pass
+            return
 
     reacted = await db.has_reacted(user.id, group_id)
     if not reacted:
@@ -286,6 +332,23 @@ async def handle_user_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         return
+
+    # VIP check
+    if not await db.is_admin(user.id):
+        vip_enabled = await db.get_setting("vip_enabled", "0") == "1"
+        if vip_enabled and not await db.is_vip(user.id):
+            vip_msg = await db.get_setting("vip_message", "💎 للحصول على VIP تواصل مع @xtt1x")
+            try:
+                await query.edit_message_text(
+                    f"┏━━━━━━━━━━━━━━━━━━━━━┓\n      💎 خدمة VIP\n"
+                    f"┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+                    f"🔒 هذا المحتوى لأعضاء VIP فقط.\n\n{vip_msg}",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("💎 طلب VIP", url="https://t.me/xtt1x")
+                    ]]))
+            except Exception:
+                pass
+            return
 
     reacted = await db.has_reacted(user.id, group_id)
     if not reacted:
@@ -389,9 +452,10 @@ async def _send_files_to_user(context, user_id: int, group_id: int,
                 "⬇️ ملفاتك جاهزة أدناه"
             )
             if reply_to:
-                await reply_to.reply_photo(photo=logo, caption=cap)
+                await reply_to.reply_photo(photo=logo, caption=cap, protect_content=True)
             else:
-                await context.bot.send_photo(chat_id=user_id, photo=logo, caption=cap)
+                await context.bot.send_photo(chat_id=user_id, photo=logo, caption=cap,
+                                             protect_content=True)
         except Exception:
             pass
 
