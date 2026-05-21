@@ -5,6 +5,12 @@ import database as db
 import keyboards as kb
 from utils import build_post_text, ft_map_from_list
 from config import BOT_NAME, MAIN_ADMIN_ID
+import re
+
+
+def _escape_md(text: str) -> str:
+    """Escape special Markdown v1 characters in user-provided text."""
+    return re.sub(r'([_*`\[])', r'\\\1', str(text))
 
 
 # ════════════════════════════════════════════════════════
@@ -865,9 +871,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         await msg.reply_text(
             f"✅ تم حظر المستخدم:\n"
-            f"👤 {fname}\n"
+            f"👤 {_escape_md(fname)}\n"
             f"🆔 `{target_id}`\n"
-            f"📝 السبب: {reason or 'لا يوجد'}",
+            f"📝 السبب: {_escape_md(reason or 'لا يوجد')}",
             parse_mode="Markdown"
         )
 
@@ -906,9 +912,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         exp_text = "دائم" if expires == "permanent" else expires[:10]
         await msg.reply_text(
             f"✅ تمت إضافة VIP:\n"
-            f"💎 {fname}\n"
+            f"💎 {_escape_md(fname)}\n"
             f"🆔 `{target_id}`\n"
-            f"⏳ ينتهي: {exp_text}",
+            f"⏳ ينتهي: {_escape_md(exp_text)}",
             parse_mode="Markdown"
         )
         # Notify the user
@@ -916,7 +922,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=target_id,
-                text=f"💎 *مبروك! تم تفعيل VIP لك*\n\n{vip_msg}\n\n⏳ المدة: {exp_text}",
+                text=f"💎 *مبروك! تم تفعيل VIP لك*\n\n{_escape_md(vip_msg)}\n\n⏳ المدة: {_escape_md(exp_text)}",
                 parse_mode="Markdown"
             )
         except Exception:
@@ -1027,7 +1033,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ft_map
         )
         await msg.reply_text(
-            f"📋 *معاينة المنشور:*\n\n{preview}\n\n"
+            f"📋 *معاينة المنشور:*\n\n{_escape_md(preview)}\n\n"
             "هل تريد النشر؟",
             parse_mode="Markdown",
             reply_markup=kb.publish_confirm_menu()
@@ -1067,7 +1073,7 @@ async def addadmin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.add_admin(tid, uname, name, update.effective_user.id, channels)
     ch_text = "، ".join(channels) if channels else "جميع القنوات"
     await update.message.reply_text(
-        f"✅ تمت إضافة المشرف:\n👤 {name}\n🆔 `{tid}`\n📢 {ch_text}",
+        f"✅ تمت إضافة المشرف:\n👤 {_escape_md(name)}\n🆔 `{tid}`\n📢 {_escape_md(ch_text)}",
         parse_mode="Markdown"
     )
 
@@ -1111,7 +1117,7 @@ async def addchannel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uname = ""
     await db.add_channel(cid, name, uname, update.effective_user.id)
     await update.message.reply_text(
-        f"✅ تمت إضافة القناة: *{name}*\n🆔 `{cid}`",
+        f"✅ تمت إضافة القناة: *{_escape_md(name)}*\n🆔 `{cid}`",
         parse_mode="Markdown"
     )
 
